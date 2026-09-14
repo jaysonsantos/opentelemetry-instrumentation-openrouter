@@ -118,11 +118,35 @@ def record_error(span: Span, exc: BaseException) -> None:
     span.set_status(Status(StatusCode.ERROR, str(exc) or type(exc).__qualname__))
 
 
-def input_text_messages(text: str) -> str:
-    return json.dumps(
-        [{"role": "user", "parts": [{"type": "text", "content": text}]}],
-        ensure_ascii=False,
-    )
+def text_part(content: str) -> dict[str, Any]:
+    return {"type": "text", "content": content}
+
+
+def audio_part(mime_type: str | None) -> dict[str, Any]:
+    """Describe an audio input without its bytes.
+
+    The GenAI ``blob`` part has a ``content`` field with the base64 data. This
+    part leaves it out, because audio bytes must never go on a span.
+    """
+    part: dict[str, Any] = {"type": "blob", "modality": "audio"}
+    if mime_type:
+        part["mime_type"] = mime_type
+    return part
+
+
+# Formats where ``audio/{format}`` is not the registered MIME type.
+_AUDIO_MIME_TYPES = {"mp3": "audio/mpeg", "m4a": "audio/mp4"}
+
+
+def audio_mime_type(audio_format: Any) -> str | None:
+    if not isinstance(audio_format, str) or not audio_format:
+        return None
+    audio_format = audio_format.lower()
+    return _AUDIO_MIME_TYPES.get(audio_format, f"audio/{audio_format}")
+
+
+def input_messages(parts: list[dict[str, Any]]) -> str:
+    return json.dumps([{"role": "user", "parts": parts}], ensure_ascii=False)
 
 
 def output_text_messages(text: str) -> str:
