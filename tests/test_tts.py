@@ -15,12 +15,12 @@ from .conftest import make_client
 MODEL = "openai/gpt-4o-mini-tts"
 CHUNKS = [b"abc", b"defg", b"hi"]
 AUDIO = b"".join(CHUNKS)
+GENERATION_ID = "gen-1757846400-abc123"
+AUDIO_HEADERS = {"content-type": "audio/mpeg", "x-generation-id": GENERATION_ID}
 
 
 def _sync_audio_handler(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(
-        200, headers={"content-type": "audio/mpeg"}, content=iter(CHUNKS)
-    )
+    return httpx.Response(200, headers=AUDIO_HEADERS, content=iter(CHUNKS))
 
 
 async def _achunks():
@@ -29,9 +29,7 @@ async def _achunks():
 
 
 def _async_audio_handler(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(
-        200, headers={"content-type": "audio/mpeg"}, content=_achunks()
-    )
+    return httpx.Response(200, headers=AUDIO_HEADERS, content=_achunks())
 
 
 def _speak(client, **kwargs):
@@ -74,6 +72,7 @@ def _assert_success_span(span, num_bytes: int = len(AUDIO)) -> None:
     assert attributes["server.address"] == "openrouter.ai"
     assert attributes["server.port"] == 443
     assert attributes["http.response.status_code"] == 200
+    assert attributes["gen_ai.response.id"] == GENERATION_ID
     assert attributes["openrouter.tts.voice"] == "alloy"
     assert attributes["openrouter.tts.response_format"] == "mp3"
     assert attributes["openrouter.tts.input.characters"] == 5
@@ -232,6 +231,7 @@ def test_sync_http_error(instrumented, exporter):
     assert span.attributes["error.type"] == "BadRequestResponseError"
     assert span.attributes["http.response.status_code"] == 400
     assert "openrouter.tts.output.bytes" not in span.attributes
+    assert "gen_ai.response.id" not in span.attributes
     assert [event.name for event in span.events] == ["exception"]
 
 
@@ -303,12 +303,24 @@ def test_span_is_current_during_request_and_nests(
     assert seen["span_context"].span_id == tts_span.context.span_id
 
 
+def test_missing_generation_id_header(instrumented, exporter, no_double_end):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-type": "audio/mpeg"}, content=iter(CHUNKS)
+        )
+
+    client = make_client(handler)
+    _speak(client).read()
+
+    (span,) = exporter.get_finished_spans()
+    assert "gen_ai.response.id" not in span.attributes
+    assert span.attributes["openrouter.tts.output.bytes"] == len(AUDIO)
+
+
 def test_preloaded_body_ends_span_at_once(instrumented, exporter, no_double_end):
     def handler(request: httpx.Request) -> httpx.Response:
         # bytes content: httpx reads the body in the constructor.
-        return httpx.Response(
-            200, headers={"content-type": "audio/mpeg"}, content=AUDIO
-        )
+        return httpx.Response(200, headers=AUDIO_HEADERS, content=AUDIO)
 
     client = make_client(handler)
     response = _speak(client)

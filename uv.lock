@@ -197,9 +197,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "openrouter", marker = "extra == 'instruments'", specifier = ">=1.1.0" },
-    { name = "opentelemetry-api", specifier = ">=1.30.0" },
-    { name = "opentelemetry-instrumentation", specifier = ">=0.51b0" },
-    { name = "opentelemetry-semantic-conventions", specifier = ">=0.51b0" },
+    { name = "opentelemetry-api", specifier = ">=1.42.0" },
+    { name = "opentelemetry-instrumentation", specifier = ">=0.63b0" },
+    { name = "opentelemetry-semantic-conventions", specifier = ">=0.63b0" },
     { name = "wrapt", specifier = ">=1.14.0" },
 ]
 provides-extras = ["instruments"]
@@ -207,7 +207,7 @@ provides-extras = ["instruments"]
 [package.metadata.requires-dev]
 dev = [
     { name = "openrouter", specifier = ">=1.1.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.42.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "ruff", specifier = ">=0.6" },
