@@ -97,6 +97,7 @@ The instrumentation re-raises the original exception unchanged.
 | `openrouter.tts.speed` | `1.2` | Only if the caller sets it. |
 | `openrouter.tts.input.characters` | `5` | Length of the input text. |
 | `openrouter.tts.output.bytes` | `48213` | Audio bytes that the caller read. |
+| `gen_ai.response.id` | `gen-1757846400-abc123` | From the `X-Generation-Id` response header. See [TTS cost](#tts-cost). |
 | `gen_ai.response.time_to_first_chunk` | `0.412` | Seconds from the call start to the first body chunk. |
 | `gen_ai.input.messages` | see below | Only when content capture is on. |
 
@@ -122,6 +123,24 @@ The instrumentation re-raises the original exception unchanged.
 
 - JSON request: the instrumentation calculates the decoded size of the base64 data.
 - Multipart request: the file content is `bytes`, `bytearray`, `memoryview`, `io.BytesIO`, or an object with a `fileno()` method.
+
+## TTS cost
+
+The TTS response does not contain the cost of the request.
+OpenRouter sends only the generation ID, in the `X-Generation-Id` header.
+The instrumentation records this ID as `gen_ai.response.id`.
+
+To get the cost, use the ID with the generations endpoint:
+
+```python
+generation = client.generations.get_generation(id=generation_id)
+print(generation.data.total_cost)
+```
+
+The instrumentation does not make this call. An extra API call for each request is not safe in instrumentation code.
+The cost data can also be available only some time after the request.
+
+You can also estimate the cost from `openrouter.tts.input.characters` and the per-character price of the model.
 
 ## Content capture
 

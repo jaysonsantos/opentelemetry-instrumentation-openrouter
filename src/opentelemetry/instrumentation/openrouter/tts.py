@@ -34,6 +34,10 @@ from opentelemetry.instrumentation.openrouter._utils import (
 # The SDK sends "pcm" when the caller does not pass ``response_format``.
 _DEFAULT_RESPONSE_FORMAT = "pcm"
 
+# OpenRouter sends the generation ID in this header. Use the ID with
+# ``client.generations.get_generation`` to get the cost of the request.
+_GENERATION_ID_HEADER = "x-generation-id"
+
 
 class _StreamSpan:
     """Holds the span state for one streamed body. Ends the span once."""
@@ -140,6 +144,13 @@ def _set_request_attributes(
             span.set_attribute(attrs.GEN_AI_INPUT_MESSAGES, input_text_messages(text))
 
 
+@dont_throw
+def _set_response_attributes(span: Span, response: Any) -> None:
+    set_attr(span, HTTP_RESPONSE_STATUS_CODE, response.status_code)
+    generation_id = response.headers.get(_GENERATION_ID_HEADER)
+    set_attr(span, attrs.GEN_AI_RESPONSE_ID, generation_id)
+
+
 def _attach_stream(
     response: Any, span: Span, started_at: float, is_async: bool
 ) -> None:
@@ -150,8 +161,8 @@ def _attach_stream(
     is already closed, or when the stream type is unexpected.
     """
     state = _StreamSpan(span, started_at)
+    _set_response_attributes(span, response)
     try:
-        set_attr(span, HTTP_RESPONSE_STATUS_CODE, response.status_code)
         content = getattr(response, "_content", None)
         if isinstance(content, bytes):
             # read() and iter_bytes() return this buffer; the stream is unused.

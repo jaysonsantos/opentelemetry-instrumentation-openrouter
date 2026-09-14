@@ -38,6 +38,7 @@ Run lint, format check, and tests before each commit.
 - Instrumentation errors must not break the SDK call. Put attribute code in a function with the `dont_throw` decorator.
 - Re-raise SDK exceptions unchanged.
 - Never record audio bytes or secrets on a span.
+- Use attribute names from `opentelemetry-semantic-conventions` when a constant exists. Add them to `_attributes.py`. Use a custom `openrouter.*` name only when no constant exists.
 - Record message content only when content capture is on.
 - Keep the TTS span open until the body is read or closed. Do not add `__del__` methods.
 - If a method is not present in the installed SDK version, skip it. Do not fail.
