@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opentelemetry-instrumentation-openrouter"
+dynamic = ["version"]
+description = "OpenTelemetry instrumentation for the OpenRouter Python SDK (text-to-speech and speech-to-text)"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Jayson Reis" }]
+keywords = ["opentelemetry", "openrouter", "tracing", "genai", "tts", "stt"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "opentelemetry-api>=1.30.0",
+  "opentelemetry-instrumentation>=0.51b0",
+  "opentelemetry-semantic-conventions>=0.51b0",
+  "wrapt>=1.14.0",
+]
+
+[project.optional-dependencies]
+instruments = ["openrouter>=1.1.0"]
+
+[project.entry-points.opentelemetry_instrumentor]
+openrouter = "opentelemetry.instrumentation.openrouter:OpenRouterInstrumentor"
+
+[dependency-groups]
+dev = [
+  "openrouter>=1.1.0",
+  "opentelemetry-sdk>=1.30.0",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
+]
+
+[tool.hatch.version]
+path = "src/opentelemetry/instrumentation/openrouter/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opentelemetry"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "examples", "README.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+# src/opentelemetry is a namespace package: only this package is first-party.
+known-first-party = ["opentelemetry.instrumentation.openrouter"]
+known-third-party = ["opentelemetry"]
