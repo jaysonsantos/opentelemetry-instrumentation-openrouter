@@ -77,6 +77,7 @@ def _assert_success_span(span) -> None:
     assert attributes["openrouter.usage.total_tokens"] == 13
     assert attributes["openrouter.usage.seconds"] == 1.25
     assert attributes["openrouter.usage.cost"] == 0.0012
+    assert "gen_ai.input.messages" not in attributes
     assert "gen_ai.output.messages" not in attributes
     assert "gen_ai.response.model" not in attributes
     assert span.status.status_code is StatusCode.UNSET
@@ -132,6 +133,80 @@ async def test_multipart_async(instrumented, exporter):
     assert result.text == TRANSCRIPT
     (span,) = exporter.get_finished_spans()
     _assert_success_span(span)
+
+
+EXPECTED_OUTPUT_MESSAGES = [
+    {
+        "role": "assistant",
+        "parts": [{"type": "text", "content": TRANSCRIPT}],
+        "finish_reason": "stop",
+    }
+]
+
+
+def _expected_input_messages(mime_type: str) -> list:
+    return [
+        {
+            "role": "user",
+            "parts": [{"type": "blob", "modality": "audio", "mime_type": mime_type}],
+        }
+    ]
+
+
+def _assert_no_audio(span) -> None:
+    encoded = base64.b64encode(AUDIO).decode("ascii")
+    for value in span.attributes.values():
+        assert encoded not in str(value)
+
+
+def test_capture_content_json_records_audio_without_bytes(instrument, exporter):
+    instrument(capture_content=True)
+    client = make_client(_ok_handler)
+
+    client.stt.create_transcription(**_json_kwargs())
+
+    (span,) = exporter.get_finished_spans()
+    assert json.loads(
+        span.attributes["gen_ai.input.messages"]
+    ) == _expected_input_messages("audio/wav")
+    assert json.loads(span.attributes["gen_ai.output.messages"]) == (
+        EXPECTED_OUTPUT_MESSAGES
+    )
+    _assert_no_audio(span)
+
+
+async def test_capture_content_multipart_records_audio_without_bytes(
+    instrument, exporter
+):
+    instrument(capture_content=True)
+    client = make_client(_ok_handler)
+    kwargs = _multipart_kwargs()
+    kwargs["file"]["content_type"] = "audio/ogg"
+
+    await client.stt.create_transcription_multipart_async(**kwargs)
+
+    (span,) = exporter.get_finished_spans()
+    assert json.loads(
+        span.attributes["gen_ai.input.messages"]
+    ) == _expected_input_messages("audio/ogg")
+    assert json.loads(span.attributes["gen_ai.output.messages"]) == (
+        EXPECTED_OUTPUT_MESSAGES
+    )
+    _assert_no_audio(span)
+
+
+def test_capture_content_records_input_on_error(instrument, exporter):
+    instrument(capture_content=True)
+    client = make_client(_unauthorized_handler)
+
+    with pytest.raises(errors.UnauthorizedResponseError):
+        client.stt.create_transcription(**_json_kwargs())
+
+    (span,) = exporter.get_finished_spans()
+    assert json.loads(
+        span.attributes["gen_ai.input.messages"]
+    ) == _expected_input_messages("audio/wav")
+    assert "gen_ai.output.messages" not in span.attributes
 
 
 def _unauthorized_handler(request: httpx.Request) -> httpx.Response:

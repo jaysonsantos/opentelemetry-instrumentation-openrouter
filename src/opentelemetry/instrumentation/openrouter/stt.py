@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import mimetypes
 import os
 from typing import Any
 
@@ -12,8 +13,11 @@ from opentelemetry.trace import Span, Tracer
 
 from opentelemetry.instrumentation.openrouter import _attributes as attrs
 from opentelemetry.instrumentation.openrouter._utils import (
+    audio_mime_type,
+    audio_part,
     dont_throw,
     get_field,
+    input_messages,
     is_content_capture_enabled,
     output_text_messages,
     record_error,
@@ -65,9 +69,35 @@ def _set_multipart_input_attributes(span: Span, kwargs: dict[str, Any]) -> None:
     set_attr(span, attrs.OPENROUTER_STT_INPUT_BYTES, _content_size(content))
 
 
+def _multipart_mime_type(file: Any) -> str | None:
+    content_type = get_field(file, "content_type")
+    if isinstance(content_type, str) and content_type:
+        return content_type
+    file_name = get_field(file, "file_name")
+    if isinstance(file_name, str):
+        return mimetypes.guess_type(file_name)[0]
+    return None
+
+
+@dont_throw
+def _set_input_messages(span: Span, kwargs: dict[str, Any], multipart: bool) -> None:
+    if multipart:
+        mime_type = _multipart_mime_type(kwargs.get("file"))
+    else:
+        audio_format = get_field(kwargs.get("input_audio"), "format_", "format")
+        mime_type = audio_mime_type(audio_format)
+    span.set_attribute(
+        attrs.GEN_AI_INPUT_MESSAGES, input_messages([audio_part(mime_type)])
+    )
+
+
 @dont_throw
 def _set_request_attributes(
-    span: Span, instance: Any, kwargs: dict[str, Any], multipart: bool
+    span: Span,
+    instance: Any,
+    kwargs: dict[str, Any],
+    multipart: bool,
+    capture_content: bool | None,
 ) -> None:
     set_attr(span, attrs.GEN_AI_REQUEST_MODEL, kwargs.get("model"))
     span.set_attribute(attrs.GEN_AI_OUTPUT_TYPE, attrs.OUTPUT_TYPE_TEXT)
@@ -78,6 +108,8 @@ def _set_request_attributes(
         _set_multipart_input_attributes(span, kwargs)
     else:
         _set_json_input_attributes(span, kwargs)
+    if is_content_capture_enabled(capture_content):
+        _set_input_messages(span, kwargs, multipart)
 
 
 @dont_throw
@@ -117,7 +149,7 @@ def create_transcription_wrapper(
             return wrapped(*args, **kwargs)
 
         span = start_span(tracer, attrs.OPERATION_SPEECH_TO_TEXT, kwargs.get("model"))
-        _set_request_attributes(span, instance, kwargs, multipart)
+        _set_request_attributes(span, instance, kwargs, multipart, capture_content)
         with trace.use_span(
             span,
             end_on_exit=False,
@@ -145,7 +177,7 @@ def create_transcription_async_wrapper(
             return await wrapped(*args, **kwargs)
 
         span = start_span(tracer, attrs.OPERATION_SPEECH_TO_TEXT, kwargs.get("model"))
-        _set_request_attributes(span, instance, kwargs, multipart)
+        _set_request_attributes(span, instance, kwargs, multipart, capture_content)
         with trace.use_span(
             span,
             end_on_exit=False,

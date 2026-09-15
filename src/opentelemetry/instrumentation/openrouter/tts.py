@@ -22,13 +22,17 @@ from opentelemetry.trace import Span, Tracer
 
 from opentelemetry.instrumentation.openrouter import _attributes as attrs
 from opentelemetry.instrumentation.openrouter._utils import (
+    audio_mime_type,
+    audio_part,
     dont_throw,
-    input_text_messages,
+    get_field,
+    input_messages,
     is_content_capture_enabled,
     record_error,
     set_attr,
     set_server_attributes,
     start_span,
+    text_part,
 )
 
 # The SDK sends "pcm" when the caller does not pass ``response_format``.
@@ -140,8 +144,44 @@ def _set_request_attributes(
     text = kwargs.get("input")
     if isinstance(text, str):
         span.set_attribute(attrs.OPENROUTER_TTS_INPUT_CHARACTERS, len(text))
-        if is_content_capture_enabled(capture_content):
-            span.set_attribute(attrs.GEN_AI_INPUT_MESSAGES, input_text_messages(text))
+    if is_content_capture_enabled(capture_content):
+        _set_input_messages(span, kwargs)
+
+
+def _data_uri_mime_type(data: Any) -> str | None:
+    if not isinstance(data, str) or not data.startswith("data:"):
+        return None
+    header = data[5:100].split(",", 1)[0]
+    return header.split(";", 1)[0] or None
+
+
+def _reference_part(reference: Any) -> dict[str, Any] | None:
+    kind = get_field(reference, "type")
+    if kind == "text":
+        text = get_field(reference, "text")
+        return text_part(text) if isinstance(text, str) else None
+    if kind == "input_audio":
+        audio = get_field(reference, "input_audio")
+        mime_type = audio_mime_type(get_field(audio, "format_", "format"))
+        return audio_part(mime_type or _data_uri_mime_type(get_field(audio, "data")))
+    return None
+
+
+@dont_throw
+def _set_input_messages(span: Span, kwargs: dict[str, Any]) -> None:
+    parts = []
+    text = kwargs.get("input")
+    if isinstance(text, str):
+        parts.append(text_part(text))
+    references = kwargs.get("input_references")
+    # Do not read other iterables. A generator is then empty for the SDK.
+    if isinstance(references, (list, tuple)):
+        for reference in references:
+            part = _reference_part(reference)
+            if part is not None:
+                parts.append(part)
+    if parts:
+        span.set_attribute(attrs.GEN_AI_INPUT_MESSAGES, input_messages(parts))
 
 
 @dont_throw

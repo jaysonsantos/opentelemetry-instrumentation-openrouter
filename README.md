@@ -117,6 +117,7 @@ The instrumentation re-raises the original exception unchanged.
 | `openrouter.usage.total_tokens` | `128` | From `usage.total_tokens`. The GenAI conventions have no attribute for it. |
 | `openrouter.usage.seconds` | `1.9` | From `usage.seconds`. |
 | `openrouter.usage.cost` | `0.00012` | From `usage.cost`, in credits. |
+| `gen_ai.input.messages` | see below | Only when content capture is on. |
 | `gen_ai.output.messages` | see below | Only when content capture is on. |
 
 `openrouter.stt.input.bytes` is available in these cases:
@@ -145,7 +146,7 @@ You can also estimate the cost from `openrouter.tts.input.characters` and the pe
 ## Content capture
 
 Content capture is off by default.
-When it is off, the spans do not contain the TTS input text or the STT transcript.
+When it is off, the spans do not contain input messages or output messages.
 
 To turn it on, set the environment variable:
 
@@ -159,10 +160,29 @@ The `capture_content` argument of `instrument()` overrides the variable.
 
 When capture is on, the instrumentation sets these attributes as JSON strings:
 
-- TTS, `gen_ai.input.messages`:
-  `[{"role": "user", "parts": [{"type": "text", "content": "Hello"}]}]`
+- TTS, `gen_ai.input.messages`: the input text, then one part for each item in `input_references`.
+  `[{"role": "user", "parts": [{"type": "text", "content": "Hello"}, {"type": "text", "content": "Reference transcript"}, {"type": "blob", "modality": "audio", "mime_type": "audio/mpeg"}]}]`
+- STT, `gen_ai.input.messages`: one part for the input audio.
+  `[{"role": "user", "parts": [{"type": "blob", "modality": "audio", "mime_type": "audio/wav"}]}]`
 - STT, `gen_ai.output.messages`:
   `[{"role": "assistant", "parts": [{"type": "text", "content": "Hello"}], "finish_reason": "stop"}]`
+
+The spans never contain audio bytes:
+
+- An audio part has no `content` field. The GenAI conventions put base64 data in that field.
+- The TTS span has no `gen_ai.output.messages`, because the TTS output is audio.
+
+The instrumentation gets the audio MIME type from these values, in this sequence:
+
+- The `format` field. For example, `mp3` becomes `audio/mpeg` and `wav` becomes `audio/wav`.
+- The TTS reference `data` URI (`data:audio/wav;base64,...`).
+- The multipart `content_type` field.
+- The multipart `file_name` extension.
+
+If none of these values is available, the part has no `mime_type`.
+
+The instrumentation records `input_references` only when the value is a list or a tuple.
+It does not read other iterables, because the SDK then cannot read them again.
 
 ## Operation names
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 import logging
@@ -315,6 +316,52 @@ def test_missing_generation_id_header(instrumented, exporter, no_double_end):
     (span,) = exporter.get_finished_spans()
     assert "gen_ai.response.id" not in span.attributes
     assert span.attributes["openrouter.tts.output.bytes"] == len(AUDIO)
+
+
+def test_capture_content_records_input_and_references_without_audio(
+    instrument, exporter, no_double_end
+):
+    instrument(capture_content=True)
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return _sync_audio_handler(request)
+
+    reference_audio = base64.b64encode(b"reference audio bytes").decode("ascii")
+    client = make_client(handler)
+    _speak(
+        client,
+        input_references=[
+            {"type": "text", "text": "Reference transcript"},
+            {
+                "type": "input_audio",
+                "input_audio": {"data": reference_audio, "format": "mp3"},
+            },
+            {
+                "type": "input_audio",
+                "input_audio": {"data": f"data:audio/wav;base64,{reference_audio}"},
+            },
+        ],
+    ).read()
+
+    assert len(seen["body"]["input_references"]) == 3
+    (span,) = exporter.get_finished_spans()
+    assert json.loads(span.attributes["gen_ai.input.messages"]) == [
+        {
+            "role": "user",
+            "parts": [
+                {"type": "text", "content": "Hello"},
+                {"type": "text", "content": "Reference transcript"},
+                {"type": "blob", "modality": "audio", "mime_type": "audio/mpeg"},
+                {"type": "blob", "modality": "audio", "mime_type": "audio/wav"},
+            ],
+        }
+    ]
+    assert "gen_ai.output.messages" not in span.attributes
+    for value in span.attributes.values():
+        assert reference_audio not in str(value)
+        assert AUDIO.decode("ascii") not in str(value)
 
 
 def test_preloaded_body_ends_span_at_once(instrumented, exporter, no_double_end):
